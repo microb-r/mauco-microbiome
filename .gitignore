@@ -2,6 +2,14 @@
 .Rhistory
 .Rapp.history
 
+# RStudio files
+*.Rproj
+
+#Ignore fastq files
+*.fastq.gz
+*.fastq
+
+
 # Session Data files
 .RData
 
