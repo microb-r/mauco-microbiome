@@ -1,0 +1,151 @@
+---
+title: "1. Phyloseq object creation, and data exploration"
+output: 
+  html_document: 
+    highlight: tango
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Libraries
+
+This are the libraries that we will be using in this section.
+
+```{r import-libraries}
+library(phyloseq)
+library(tidyverse)
+library(colorspace)
+```
+
+When running the notebook to generate the HTML file, all the chunks of code will be run in the notebook folder. 
+
+
+## Create phyloseq object
+
+First, we will create the phyloseq object based on the already processed data with Dada2. This includes:
+
+- ASV table
+- Taxonomy analysis
+- Metadata
+- Phylogenetic tree
+
+Before importing and creating everything, we need to import the metadata and add the appropiate key column to match the samples with the metadata.
+
+```{r fix-metadata}
+key_mauco <- read_tsv("../data/metadata/mauco_samples_keys.tsv",
+                      col_types = cols(.default="c"))
+
+metadata <- read_tsv("../data/metadata/mauco_metadata.tsv",
+                     col_types = cols(.default="c")) %>% # This commands reads the tsv file
+  left_join(key_mauco) %>% # Match key and sample name
+  drop_na() %>% # Remove samples with no match
+  na_if(., ".") %>% # Replace dots with NA
+  add_row(id_precol="PC-M-NA", sample_id = "244") # Add a row for sample 244. Will filter later
+
+```
+
+
+With the metadata, now we can create and store the phyloseq object
+
+```{r create-phyloseq-object}
+
+# To match the metadata with the features, we need to use the sample id as rownames for the metadata
+metadata <- as.data.frame(metadata)
+rownames(metadata) <- metadata$sample_id
+
+# Taxonomy information
+taxid <- readRDS("../data/processed/taxid.rds")
+
+# Dada2 ASV output
+
+dada2_asv <- readRDS("../data/processed/seqtab.nochim.RDS")
+
+# Phylogenetic tree
+treefile = read_tree("../data/processed/seqtab_nochim.final.tre")
+
+# Combine everything to create the phyloseq object
+ps0 <- phyloseq(tax_table(taxid),
+                sample_data(metadata),
+                otu_table(dada2_asv, taxa_are_rows = FALSE),
+                phy_tree(treefile))
+
+
+ps0
+
+# Save the phyloseq object
+saveRDS(ps0, file="../data/processed/ps0.rds")
+```
+
+# Explore prevalence
+
+```{r prevalence}
+
+prevdf = apply(X = otu_table(ps0),
+               MARGIN = ifelse(taxa_are_rows(ps0), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+
+# Add taxonomy information
+prevdf = data.frame(Prevalence = prevdf,
+                    TotalAbundance = taxa_sums(ps0),
+                    tax_table(ps0))
+
+# Save the prevalence information
+write.table(prevdf, "../results/tables/PrevalenceData.tsv", sep="\t", row.names=FALSE,
+            quote=FALSE)
+
+```
+
+With the prevalence data, we can now filter the ASVs. This will be done using the following criteria:
+
+- Remove eukaryotes
+- Remove sequences with low prevalence (only present in 1 or 2 samples) and with no annotation
+- Remove sequences with no annotation to any taxonomic level
+
+
+```{r filter-asv}
+# Make the filter list
+filter_ASVs <- rownames(subset(prevdf, Prevalence <= 2 & is.na(Kingdom) | Kingdom == "Eukaryota"))
+
+# Get the list of all ASVs
+allASVs <- taxa_names(ps0)
+
+# Substract from the complete list, to have the list of ASVs to keep
+ASV2keep <- allASVs[!(allASVs %in% filter_ASVs)]
+
+ps1 <- prune_taxa(ASV2keep, ps0)
+ps1
+```
+
+
+Finally, we remove ASVs classified as Chloroplast or Mitochondria
+
+```{r remove-chloro-mitoch}
+ps1 <- subset_taxa(ps1, Order!="Chloroplast")
+ps1 <- subset_taxa(ps1, Family!="Mitochondria")
+
+ps1
+```
+
+
+# Save objects
+
+In this final step we are going to save the final objects. To make it easier down the line, we are going to replace the ASV name (the actual DNA sequence), with a internal ID.
+
+```{r replace-asv-name}
+name_table <- data.frame("Dada2" = taxa_names(ps1), "ASV" = paste0("ASV", seq(ntaxa(ps1))))
+write.table(name_table, "../data/processed/ASV_names.txt", quote=FALSE, sep="\t", row.names=FALSE)
+
+# Replace the names on the phyloseq object
+taxa_names(ps1) <- paste0("ASV", seq(ntaxa(ps1)))
+
+# Finally save the filtered and renamed phyloseq object
+saveRDS(ps1, file="../data/processed/ps1.rds")
+```
+
+
+
+
+
+
+
+
