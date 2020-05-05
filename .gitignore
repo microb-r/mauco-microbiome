@@ -9,6 +9,8 @@
 *.fastq.gz
 *.fastq
 
+#Ignore reference files
+data/references/
 
 # Session Data files
 .RData

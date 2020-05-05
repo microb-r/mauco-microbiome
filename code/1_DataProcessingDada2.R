@@ -2,6 +2,10 @@
 
 library(dada2)
 library(tidyverse)
+library(DECIPHER)
+
+# Set working directory
+setwd(".")
 
 # First step, sequence filtering
 
@@ -57,6 +61,48 @@ rownames(track) <- sample.names
 write.table(track, file= "../results/tables/SequenceProcessing.tsv",
             sep="\t", row.names=TRUE, quote = FALSE)
 saveRDS(seqtab.nochim, "../data/processed/seqtab.nochim.RDS")
+
+### Assign taxonomy
+
+# Get the reference information
+load("../data/references/SILVA_SSU_r138_2019.RData")
+
+# Obtain DNA strings from the ASVs
+dna <- DNAStringSet(getSequences(seqtab.nochim))
+
+# Assign taxonomy using IDTAXA
+ids <- IdTaxa(dna, trainingSet, strand="both", processors=20, verbose=TRUE)
+
+#Ranks to store
+ranks <- c("domain", "phylum", "class", "order", "family", "genus")
+
+# Convert the output object of class "Taxa" to a matrix analogous to the output from assignTaxonomy
+taxid <- t(sapply(ids, function(x) {
+  m <- match(ranks, x$rank)
+  taxa <- x$taxon[m]
+  taxa[startsWith(taxa, "unclassified_")] <- NA
+  taxa
+}))
+colnames(taxid) <- ranks; rownames(taxid) <- getSequences(seqtab.nochim)
+colnames(taxid) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+
+# Add species information to the table
+taxid <- addSpecies(taxid, "../data/references/silva_species_assignment_v138.fa.gz", 
+                    tryRC=TRUE, verbose=TRUE, allowMultiple = TRUE)
+
+# Save the taxid object
+saveRDS(taxid, "../data/processed/taxid.rds")
+
+##### 5- Generate Phylogenetic Tree
+
+## Generate phylogenetic tree
+
+seqs <- getSequences(seqtab.nochim)
+write(seqs, "../data/processed/seqtab_nochim.list")
+system("Align_Tree_Dada2otus.py -i ../data/processed/seqtab_nochim.list -o ../data/processed/seqtab_nochim")
+
+
+
 
 
 
