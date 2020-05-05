@@ -1,0 +1,67 @@
+---
+title: "2. Alpha diversity"
+output: html_notebook
+---
+
+# Alpha Diversity analysis
+
+Using the previously saved phyloseq object, we are going to generate the alpha diversity table.
+
+
+```{r libraries-and-ps}
+
+library(phyloseq)
+library(tidyverse)
+library(colorspace)
+
+ps1 <- readRDS("../data/processed/ps1.rds")
+
+```
+
+With the phyloseq object we are going to estimate the alpha diversity using Chao1 and Shannon, and add that to the metadata. Finally, we will save the new table and do some plots.
+
+
+```{r}
+
+metadata <- as.data.frame(as.matrix(sample_data(ps1)))
+
+richness_metrics <- estimate_richness(ps1, measures=c("Observed", "Chao1", "Shannon")) %>%
+  rownames_to_column("sample_id") %>%
+  mutate(sample_id = str_remove(sample_id, "X")) %>%
+  left_join(metadata) %>%
+  write_tsv("../results/tables/AlphaDiversity.tsv")
+```
+
+
+Some alpha diversity plots
+
+```{r}
+# To make a facet using the three measurments, we need to transform the data to long format
+
+richness_metrics %>%
+  select(-se.chao1) %>%
+  pivot_longer(cols=c("Observed", "Chao1", "Shannon"),
+               names_to = "diversity_metric",
+               values_to = "diversity_value") %>%
+  filter(!is.na(mdro)) %>%
+
+
+ggplot(aes(x=mdro, y=diversity_value, fill=mdro)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width=0.2, alpha=0.4) +
+  facet_wrap(~diversity_metric, scale="free") +
+  scale_fill_discrete_qualitative() +
+  theme_light() +
+  xlab("") +
+  ylab("Diversity value") +
+  
+  theme(strip.background = element_rect(fill="#34495e"))
+
+ggsave("../results/figures/AlphaDiversity_MDRO.png",
+       dpi=300,
+       width=7,
+       height=5)
+```
+
+
+
